@@ -35,7 +35,9 @@ class GeradorRelatorios {
           veiculosProcessados: resultadoNormal.veiculosProcessados,
           veiculosNaoAtendidos: resultadoNormal.veiculosNaoAtendidos,
           utilizacaoMedia: this._mediaUtilizacao(resultadoNormal.utilizacaoEmbarcacoes),
-          viagensRealizadas: resultadoNormal.viagensRealizadas
+          viagensRealizadas: resultadoNormal.viagensRealizadas,
+          // Métricas de teoria de filas
+          metricas: resultadoNormal.metricasTeoriaFilas
         });
 
         // Dia com reservas
@@ -52,7 +54,9 @@ class GeradorRelatorios {
           veiculosNaoAtendidos: resultadoComReservas.veiculosNaoAtendidos,
           utilizacaoMedia: this._mediaUtilizacao(resultadoComReservas.utilizacaoEmbarcacoes),
           viagensRealizadas: resultadoComReservas.viagensRealizadas,
-          diferenca: resultadoComReservas.tempoMedioEsperaNormais - resultadoComReservas.tempoMedioEsperaReservas
+          diferenca: resultadoComReservas.tempoMedioEsperaNormais - resultadoComReservas.tempoMedioEsperaReservas,
+          // Métricas de teoria de filas
+          metricas: resultadoComReservas.metricasTeoriaFilas
         });
 
         console.log(`✅ Dia ${dia}/15 simulado`);
@@ -63,6 +67,9 @@ class GeradorRelatorios {
 
       // === PREPARA DADOS PARA GRÁFICOS ===
       const dadosGraficos = this._prepararDadosGraficos(historico);
+
+      // === MÉTRICAS DE TEORIA DE FILAS (MÉDIA DOS 15 DIAS) ===
+      const metricasConsolidadas = this._consolidarMetricas(historico);
 
       const relatorio = {
         dataGeracao: new Date().toLocaleString("pt-BR"),
@@ -76,6 +83,9 @@ class GeradorRelatorios {
 
         // Estatísticas consolidadas
         estatisticas: estatisticas,
+
+        // Métricas de teoria de filas consolidadas (média 15 dias)
+        metricasTeoriaFilas: metricasConsolidadas,
 
         // Recomendações
         analise: this._gerarAnalise(estatisticas)
@@ -109,6 +119,55 @@ class GeradorRelatorios {
     if (array.length === 0) return 0;
     const soma = array.reduce((a, b) => a + b, 0);
     return soma / array.length;
+  }
+
+  // Consolida métricas de teoria de filas (média dos 15 dias)
+  static _consolidarMetricas(historico) {
+    // Extrai métricas de cada dia (normal)
+    const lambdas = historico.normal.map(d => d.metricas.lambda.valor);
+    const mus = historico.normal.map(d => d.metricas.mu.valor);
+    const rhos = historico.normal.map(d => d.metricas.rho.valor);
+    const Wqs = historico.normal.map(d => d.metricas.Wq.valor);
+    const Ws = historico.normal.map(d => d.metricas.W.valor);
+    const Lqs = historico.normal.map(d => d.metricas.Lq.valor);
+    const Ls = historico.normal.map(d => d.metricas.L.valor);
+    const throughputs = historico.normal.map(d => d.metricas.throughput.valor);
+
+    // Extrai métricas de cada dia (com reservas)
+    const lambdasReserva = historico.comReservas.map(d => d.metricas.lambda.valor);
+    const rhosReserva = historico.comReservas.map(d => d.metricas.rho.valor);
+    const WqsReserva = historico.comReservas.map(d => d.metricas.Wq.valor);
+    const WsReserva = historico.comReservas.map(d => d.metricas.W.valor);
+    const LqsReserva = historico.comReservas.map(d => d.metricas.Lq.valor);
+    const LsReserva = historico.comReservas.map(d => d.metricas.L.valor);
+    const throughputsReserva = historico.comReservas.map(d => d.metricas.throughput.valor);
+
+    return {
+      normal: {
+        lambda: { valor: this._calcularMedia(lambdas).toFixed(2), unidade: 'veículos/hora', simbolo: 'λ' },
+        mu: { valor: this._calcularMedia(mus).toFixed(3), unidade: 'veículos/min/servidor', simbolo: 'μ' },
+        rho: { valor: (this._calcularMedia(rhos) * 100).toFixed(2), unidade: '%', simbolo: 'ρ' },
+        Wq: { valor: this._calcularMedia(Wqs).toFixed(2), unidade: 'minutos', simbolo: 'Wq' },
+        W: { valor: this._calcularMedia(Ws).toFixed(2), unidade: 'minutos', simbolo: 'W' },
+        Lq: { valor: this._calcularMedia(Lqs).toFixed(2), unidade: 'veículos', simbolo: 'Lq' },
+        L: { valor: this._calcularMedia(Ls).toFixed(2), unidade: 'veículos', simbolo: 'L' },
+        throughput: { valor: this._calcularMedia(throughputs).toFixed(2), unidade: 'veículos/hora', simbolo: 'X' }
+      },
+      comReservas: {
+        lambda: { valor: this._calcularMedia(lambdasReserva).toFixed(2), unidade: 'veículos/hora', simbolo: 'λ' },
+        rho: { valor: (this._calcularMedia(rhosReserva) * 100).toFixed(2), unidade: '%', simbolo: 'ρ' },
+        Wq: { valor: this._calcularMedia(WqsReserva).toFixed(2), unidade: 'minutos', simbolo: 'Wq' },
+        W: { valor: this._calcularMedia(WsReserva).toFixed(2), unidade: 'minutos', simbolo: 'W' },
+        Lq: { valor: this._calcularMedia(LqsReserva).toFixed(2), unidade: 'veículos', simbolo: 'Lq' },
+        L: { valor: this._calcularMedia(LsReserva).toFixed(2), unidade: 'veículos', simbolo: 'L' },
+        throughput: { valor: this._calcularMedia(throughputsReserva).toFixed(2), unidade: 'veículos/hora', simbolo: 'X' }
+      },
+      comparativo: {
+        reducaoWq: ((this._calcularMedia(Wqs) - this._calcularMedia(WqsReserva)) / this._calcularMedia(Wqs) * 100).toFixed(2) + '%',
+        reducaoLq: ((this._calcularMedia(Lqs) - this._calcularMedia(LqsReserva)) / this._calcularMedia(Lqs) * 100).toFixed(2) + '%',
+        aumentoThroughput: ((this._calcularMedia(throughputsReserva) - this._calcularMedia(throughputs)) / this._calcularMedia(throughputs) * 100).toFixed(2) + '%'
+      }
+    };
   }
 
   static _calcularDesvioPadrao(array) {
