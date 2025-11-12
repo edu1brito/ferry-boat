@@ -389,6 +389,105 @@ class SimuladorFerries {
 
   resultados.viagensRealizadas = this.embarcacoes.reduce((s, e) => s + e.viagensRealizadas, 0);
 
+  // === MÉTRICAS DE TEORIA DE FILAS ===
+  // Calcula total de veículos que chegaram (processados + não atendidos)
+  const totalVeiculosChegados = todos.length + resultados.veiculosNaoAtendidos;
+
+  // λ (Lambda): Taxa de chegada em veículos/hora
+  const lambda = totalVeiculosChegados / resultados.tempoSimulacao;
+
+  // μ (Mi): Taxa de atendimento em veículos/minuto/servidor
+  // Baseado no tempo de travessia (80 min) + embarque (15 min) = 95 min por ciclo
+  // Capacidade: 50 veículos por ciclo
+  // μ = 50 veículos / 95 minutos ≈ 0.526 veículos/min (ajustado para realidade)
+  const tempoServicoTotal = this.config.tempoTravessiaMinutos + this.config.tempoEmbarqueMinutos;
+  const mu = this.config.capacidadeVeiculos / tempoServicoTotal; // veículos por minuto
+  const muPorHora = mu * 60; // veículos por hora
+
+  // c: Número de servidores (embarcações)
+  const c = this.config.numEmbarcacoes;
+
+  // ρ (Rho): Utilização do sistema
+  // ρ = λ / (c × μ)
+  const rho = lambda / (c * muPorHora);
+
+  // Wq: Tempo médio na fila (em minutos) - já calculado
+  const Wq = resultados.tempoMedioEspera;
+
+  // W: Tempo médio no sistema (fila + serviço) em minutos
+  // W = Wq + tempo de serviço
+  const W = Wq + tempoServicoTotal;
+
+  // Lq: Tamanho médio da fila (Lei de Little: Lq = λ × Wq)
+  // Convertendo Wq para horas: Wq/60
+  const Lq = lambda * (Wq / 60);
+
+  // L: Número médio de veículos no sistema
+  // L = λ × W (convertendo W para horas)
+  const L = lambda * (W / 60);
+
+  // X (Throughput): Vazão real do sistema (veículos processados por hora)
+  const throughput = todos.length / resultados.tempoSimulacao;
+
+  // Adiciona métricas ao resultado
+  resultados.metricasTeoriaFilas = {
+    lambda: {
+      valor: lambda,
+      unidade: 'veículos/hora',
+      descricao: 'Taxa de chegada',
+      simbolo: 'λ'
+    },
+    mu: {
+      valor: mu,
+      unidade: 'veículos/minuto/servidor',
+      valorPorHora: muPorHora,
+      descricao: 'Taxa de atendimento',
+      simbolo: 'μ'
+    },
+    rho: {
+      valor: rho,
+      percentual: (rho * 100),
+      descricao: 'Utilização dos servidores',
+      simbolo: 'ρ',
+      status: rho < 0.85 ? 'Sistema estável' : rho < 1 ? 'Sistema próximo ao limite' : 'Sistema saturado'
+    },
+    Wq: {
+      valor: Wq,
+      unidade: 'minutos',
+      descricao: 'Tempo médio na fila',
+      simbolo: 'Wq'
+    },
+    W: {
+      valor: W,
+      unidade: 'minutos',
+      descricao: 'Tempo médio no sistema (fila + serviço)',
+      simbolo: 'W'
+    },
+    Lq: {
+      valor: Lq,
+      unidade: 'veículos',
+      descricao: 'Tamanho médio da fila',
+      simbolo: 'Lq'
+    },
+    L: {
+      valor: L,
+      unidade: 'veículos',
+      descricao: 'Número médio de veículos no sistema',
+      simbolo: 'L'
+    },
+    throughput: {
+      valor: throughput,
+      unidade: 'veículos/hora',
+      descricao: 'Vazão (veículos processados por hora)',
+      simbolo: 'X'
+    },
+    c: {
+      valor: c,
+      descricao: 'Número de servidores (embarcações)',
+      simbolo: 'c'
+    }
+  };
+
   return resultados;
 }
 
@@ -481,17 +580,20 @@ app.post('/simular', (req, res) => {
     const configCustom = req.body;
     const simulador = new SimuladorFerries(configCustom);
     const resultados = simulador.processar();
-    
+
     res.json({
       sucesso: true,
       resultados,
       configuracaoUsada: simulador.config,
-      metricas: {
-        Wq: resultados.tempoMedioEspera + ' minutos',
-        Lq: resultados.veiculosEmFila + ' veículos',
-        throughput: resultados.veiculosProcessados + ' veículos/dia',
-        utilizacaoMedia: (resultados.utilizacaoEmbarcacoes.reduce((acc, e) => 
-          acc + e.percentualUtilizacao, 0) / resultados.utilizacaoEmbarcacoes.length).toFixed(2) + '%'
+      metricas: resultados.metricasTeoriaFilas,
+      resumoMetricas: {
+        '📊 Taxa de Chegada (λ)': resultados.metricasTeoriaFilas.lambda.valor.toFixed(2) + ' veículos/hora',
+        '⚙️ Taxa de Atendimento (μ)': resultados.metricasTeoriaFilas.mu.valor.toFixed(3) + ' veículos/min/servidor',
+        '📈 Utilização (ρ)': resultados.metricasTeoriaFilas.rho.percentual.toFixed(2) + '% - ' + resultados.metricasTeoriaFilas.rho.status,
+        '⏱️ Tempo na Fila (Wq)': resultados.metricasTeoriaFilas.Wq.valor.toFixed(2) + ' minutos',
+        '🕐 Tempo no Sistema (W)': resultados.metricasTeoriaFilas.W.valor.toFixed(2) + ' minutos',
+        '🚗 Tamanho da Fila (Lq)': resultados.metricasTeoriaFilas.Lq.valor.toFixed(2) + ' veículos',
+        '🔄 Vazão (X)': resultados.metricasTeoriaFilas.throughput.valor.toFixed(2) + ' veículos/hora'
       }
     });
   } catch (error) {
