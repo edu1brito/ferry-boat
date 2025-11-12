@@ -389,45 +389,49 @@ class SimuladorFerries {
 
   resultados.viagensRealizadas = this.embarcacoes.reduce((s, e) => s + e.viagensRealizadas, 0);
 
-  // === MÉTRICAS DE TEORIA DE FILAS ===
-  // Calcula total de veículos que chegaram (processados + não atendidos)
+  // === MÉTRICAS DE TEORIA DE FILAS (Modelo M/M/c) ===
+
+  // Total de veículos que chegaram no sistema
   const totalVeiculosChegados = todos.length + resultados.veiculosNaoAtendidos;
 
-  // λ (Lambda): Taxa de chegada em veículos/hora
-  const lambda = totalVeiculosChegados / resultados.tempoSimulacao;
+  // --- λ (Lambda): Taxa de chegada ---
+  // Fórmula: λ = total de chegadas / tempo de simulação
+  const lambda = totalVeiculosChegados / resultados.tempoSimulacao; // veículos/hora
 
-  // μ (Mi): Taxa de atendimento em veículos/minuto/servidor
-  // Baseado no tempo de travessia (80 min) + embarque (15 min) = 95 min por ciclo
-  // Capacidade: 50 veículos por ciclo
-  // μ = 50 veículos / 95 minutos ≈ 0.526 veículos/min (ajustado para realidade)
+  // --- μ (Mi): Taxa de atendimento por servidor ---
+  // Tempo total de serviço = embarque + travessia (95 min)
   const tempoServicoTotal = this.config.tempoTravessiaMinutos + this.config.tempoEmbarqueMinutos;
-  const mu = this.config.capacidadeVeiculos / tempoServicoTotal; // veículos por minuto
-  const muPorHora = mu * 60; // veículos por hora
+  // Fórmula: μ = capacidade / tempo de serviço
+  const mu = this.config.capacidadeVeiculos / tempoServicoTotal; // veículos/min/servidor
+  const muPorHora = mu * 60; // convertido para veículos/hora
 
-  // c: Número de servidores (embarcações)
-  const c = this.config.numEmbarcacoes;
+  // --- c: Número de servidores ---
+  const c = this.config.numEmbarcacoes; // 4 embarcações
 
-  // ρ (Rho): Utilização do sistema
-  // ρ = λ / (c × μ)
+  // --- ρ (Rho): Utilização do sistema ---
+  // Fórmula: ρ = λ / (c × μ)
+  // Indica % de ocupação dos servidores
   const rho = lambda / (c * muPorHora);
 
-  // Wq: Tempo médio na fila (em minutos) - já calculado
-  const Wq = resultados.tempoMedioEspera;
+  // --- Wq: Tempo médio na fila ---
+  // Calculado pela simulação (média dos tempos de espera reais)
+  const Wq = resultados.tempoMedioEspera; // minutos
 
-  // W: Tempo médio no sistema (fila + serviço) em minutos
-  // W = Wq + tempo de serviço
-  const W = Wq + tempoServicoTotal;
+  // --- W: Tempo médio total no sistema ---
+  // Fórmula: W = Wq + tempo de serviço
+  const W = Wq + tempoServicoTotal; // minutos
 
-  // Lq: Tamanho médio da fila (Lei de Little: Lq = λ × Wq)
-  // Convertendo Wq para horas: Wq/60
-  const Lq = lambda * (Wq / 60);
+  // --- Lq: Tamanho médio da fila ---
+  // Fórmula (Lei de Little): Lq = λ × Wq
+  const Lq = lambda * (Wq / 60); // convertendo Wq para horas
 
-  // L: Número médio de veículos no sistema
-  // L = λ × W (convertendo W para horas)
-  const L = lambda * (W / 60);
+  // --- L: Número médio de veículos no sistema ---
+  // Fórmula (Lei de Little): L = λ × W
+  const L = lambda * (W / 60); // convertendo W para horas
 
-  // X (Throughput): Vazão real do sistema (veículos processados por hora)
-  const throughput = todos.length / resultados.tempoSimulacao;
+  // --- X (Throughput): Vazão real ---
+  // Fórmula: X = veículos processados / tempo
+  const throughput = todos.length / resultados.tempoSimulacao; // veículos/hora
 
   // Adiciona métricas ao resultado
   resultados.metricasTeoriaFilas = {
